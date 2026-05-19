@@ -157,6 +157,14 @@ function QuizScreen({ questions, questionImages, onDone, onBack, isMobile }) {
   const isOpen = q.type === "open-amount";
   const progress = ((index + 1) / questions.length) * 100;
 
+  // Preload all question images on mount (each ~35-44KB, total ~700KB)
+  useEffect(() => {
+    questions.forEach(q => {
+      const src = questionImages?.[String(q.id)] || `/images/questions/q${q.id}.jpg`;
+      const img = new Image(); img.src = src;
+    });
+  }, []);
+
   // Reset open input when question changes
   useEffect(() => { setOpenInput(""); }, [q.id]);
 
@@ -293,7 +301,7 @@ function QuizScreen({ questions, questionImages, onDone, onBack, isMobile }) {
 }
 
 /* ── CALC ────────────────────────────────────────────────────── */
-function CalcScreen({ onDone, strings, isMobile }) {
+function CalcScreen({ onDone, strings, isMobile, result, images }) {
   const [step, setStep] = useState(0);
   const msgs = [strings.calcMsg1, strings.calcMsg2, strings.calcMsg3, strings.calcMsg4];
   useEffect(() => {
@@ -302,6 +310,13 @@ function CalcScreen({ onDone, strings, isMobile }) {
       return s + 1;
     }), 650);
     return () => clearInterval(id);
+  }, []);
+
+  // Use the calc animation time (≈3s) to preload the result type image
+  useEffect(() => {
+    if (!result?.typeKey) return;
+    const src = imgSrc(images?.[result.typeKey], `/images/types/${result.typeKey}.jpg`);
+    const img = new Image(); img.src = src;
   }, []);
 
   return (
@@ -384,6 +399,14 @@ function PlanScreen({ result, cards, cardImages, onBack, onClaim, strings, isMob
   const { monthlyWaste } = result;
   const next = () => setActive(x => (x + 1) % cards.length);
   const prev = () => setActive(x => (x + cards.length - 1) % cards.length);
+
+  // Preload all card images on mount
+  useEffect(() => {
+    cards.forEach(card => {
+      const src = imgSrc(cardImages?.[card.no], `/images/cards/card${card.no}.jpg`);
+      const img = new Image(); img.src = src;
+    });
+  }, []);
 
   return (
     <Screen name="plan" isMobile={isMobile}>
@@ -624,7 +647,7 @@ function MPTIAppContent() {
       <AnimatePresence mode="wait">
         {phase === "start"  && <StartScreen onStart={() => setPhase("quiz")} stats={stats} fakeCount={fakeCount} coverImage={coverImage} coverContent={coverContent} settings={settings} isMobile={isMobile} />}
         {phase === "quiz"   && <QuizScreen questions={questions} questionImages={questionImages} onDone={handleDone} onBack={() => setPhase("start")} isMobile={isMobile} />}
-        {phase === "calc"   && <CalcScreen onDone={handleCalc} strings={strings} isMobile={isMobile} />}
+        {phase === "calc"   && <CalcScreen onDone={handleCalc} strings={strings} isMobile={isMobile} result={result} images={images} />}
         {phase === "result" && result && <ResultScreen result={result} equivRefs={equivRefs} onShare={() => { recordShare(); setShowShare(true); }} onPlan={() => setPhase("plan")} onRestart={() => { setResult(null); setPhase("start"); }} strings={strings} isMobile={isMobile} />}
         {phase === "plan"   && result && <PlanScreen result={result} cards={cards} cardImages={cardImages} onBack={() => setPhase("result")} onClaim={() => setShowLogin(true)} strings={strings} isMobile={isMobile} />}
       </AnimatePresence>
