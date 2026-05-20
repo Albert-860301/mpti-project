@@ -812,27 +812,30 @@ function ImageManager() {
 
     const recovered = {};
     const recoveredRaw = {};
+    let needsRaw = 0;
     const allKeys = Object.keys(types);
 
     for (const key of allKeys) {
-      // Try baked version first, then raw — use Image() to test (no CORS issues)
       const bakedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}_baked.jpg`;
       const rawUrl   = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}.jpg`;
 
-      if (await testImage(bakedUrl)) {
-        recovered[key] = bakedUrl;
-        // Also check if raw exists for future re-baking
-        recoveredRaw[key] = (await testImage(rawUrl)) ? rawUrl : bakedUrl;
-        setStatus(`✓ 找到 ${key}`);
-        continue;
-      }
-      if (await testImage(rawUrl)) {
+      // Prefer raw (original without bar) for clean re-baking
+      const hasRaw = await testImage(rawUrl);
+      const hasBaked = await testImage(bakedUrl);
+
+      if (hasRaw) {
         recovered[key] = rawUrl;
         recoveredRaw[key] = rawUrl;
-        setStatus(`✓ 找到 ${key} (原图)`);
-        continue;
+        setStatus(`✓ ${key} (原图)`);
+      } else if (hasBaked) {
+        // Only baked exists — display it but DON'T save as raw (it has old bar)
+        recovered[key] = bakedUrl;
+        // Leave imagesRaw empty for this key so user knows to re-upload
+        needsRaw++;
+        setStatus(`⚠ ${key} (仅旧合成版，需重新上传原图)`);
+      } else {
+        setStatus(`✗ ${key} 未找到`);
       }
-      setStatus(`✗ 未找到 ${key}`);
     }
 
     const count = Object.keys(recovered).length;
@@ -842,7 +845,9 @@ function ImageManager() {
       setImages(getImages());
       setCacheBust(Date.now());
       await syncToServer();
-      setStatus(`✅ 恢复了 ${count}/${allKeys.length} 张图片并已同步到云端`);
+      let msg = `✅ 恢复了 ${count}/${allKeys.length} 张图片`;
+      if (needsRaw > 0) msg += `\n⚠️ 其中 ${needsRaw} 张是旧合成版（带旧bar），请重新上传原图后再合成新bar`;
+      setStatus(msg);
     } else {
       setStatus("❌ Cloudinary 上未找到任何图片，需要重新上传");
     }
@@ -867,12 +872,20 @@ function ImageManager() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 12 }}>
         {Object.entries(types).map(([key, t]) => {
           const img = images[key];
+          const rawImages = getImagesRaw();
+          const hasRaw = !!rawImages[key];
+          const needsReupload = img && !hasRaw; // has baked but no raw original
           return (
-            <div key={key} style={{ ...cardStyle(), textAlign: "center", padding: 12 }}>
+            <div key={key} style={{ ...cardStyle(), textAlign: "center", padding: 12, border: needsReupload ? `2px solid ${S.orange}` : `1px solid ${S.border}` }}>
               {img ? (
                 <div style={{ position: "relative", marginBottom: 8 }}>
                   <img src={img.startsWith("http") ? `${img}${img.includes("?") ? "&" : "?"}v=${cacheBust}` : img} alt={t.name} style={{ width: "100%", borderRadius: 10, aspectRatio: "9/16", objectFit: "cover" }} />
                   <button onClick={() => handleRemove(key)} style={{ position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: 12, background: S.red, color: "#fff", border: "none", fontSize: 12, cursor: "pointer" }}>✕</button>
+                  {needsReupload && (
+                    <div style={{ position: "absolute", bottom: 4, left: 4, right: 4, padding: "4px 6px", borderRadius: 8, background: "rgba(245,158,11,0.92)", fontSize: 9, fontWeight: 800, color: "#fff", textAlign: "center" }}>
+                      ⚠️ 旧合成版，请重新上传原图
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div onClick={() => handleUpload(key)} style={{ aspectRatio: "9/16", borderRadius: 10, border: `2px dashed ${S.border}`, display: "grid", placeItems: "center", cursor: "pointer", marginBottom: 8, background: "#FAFBFC" }}>
@@ -885,6 +898,7 @@ function ImageManager() {
               <div style={{ fontSize: 18 }}>{t.e}</div>
               <div style={{ fontSize: 12, fontWeight: 800, color: t.color }}>{t.name}</div>
               <div style={{ marginTop: 4 }}><SizeHint text="540×960px (9:16)" /></div>
+              {img && <button onClick={() => handleUpload(key)} style={{ ...btn(needsReupload ? S.orange : "#F1F5F9", needsReupload ? "#fff" : S.text), padding: "6px 12px", fontSize: 11, marginTop: 6, width: "100%" }}>{needsReupload ? "📷 重新上传原图" : "📷 替换图片"}</button>}
               {!img && <button onClick={() => handleUpload(key)} style={{ ...btn("#F1F5F9", S.text), padding: "6px 12px", fontSize: 11, marginTop: 6, width: "100%" }}>Upload</button>}
             </div>
           );
