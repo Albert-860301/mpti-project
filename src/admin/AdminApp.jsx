@@ -146,8 +146,8 @@ async function buildShareImageAdmin(src, { overlayText, overlayText2, overlayQrU
   const W = img.naturalWidth  || img.width;
   const H = img.naturalHeight || img.height;
 
-  // Bar height scales with image; ~12% gives comfortable room for 2 lines + logo
-  const barH = Math.round(H * 0.12);
+  // Bar height kept compact; font sizes shrink to fit 2 lines within it
+  const barH = Math.round(H * 0.07);
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -180,7 +180,7 @@ async function buildShareImageAdmin(src, { overlayText, overlayText2, overlayQrU
   if (logoSrc) {
     try {
       const logoImg = await loadImgAdmin(logoSrc);
-      const logoH = Math.round(barH * 0.45);
+      const logoH = Math.round(barH * 0.60);
       const logoW = Math.round(logoImg.naturalWidth * (logoH / logoImg.naturalHeight));
       const logoY = barY + Math.round((barH - logoH) / 2);
       ctx.drawImage(logoImg, hPad, logoY, logoW, logoH);
@@ -192,40 +192,41 @@ async function buildShareImageAdmin(src, { overlayText, overlayText2, overlayQrU
   const textAreaW = qrLeftEdge - contentStartX - hPad;
   const textCX    = contentStartX + textAreaW / 2;
 
-  // Line 1 — larger, regular weight
-  const line1 = overlayText  || "";
-  const line2 = overlayText2 || "";
+  const line1  = overlayText  || "";
+  const line2  = overlayText2 || "";
   const hasTwo = line1 && line2;
 
-  // Choose font sizes that fit within textAreaW
-  let fs1 = Math.round(barH * 0.26);
-  ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-  while (fs1 > 8 && ctx.measureText(line1).width > textAreaW) { fs1--; ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
+  // With a compact bar, two lines share the vertical space — start small
+  const maxFs1 = Math.round(barH * (hasTwo ? 0.30 : 0.45));
+  const maxFs2 = Math.round(barH * 0.22);
 
-  let fs2 = Math.round(barH * 0.20);
+  let fs1 = maxFs1;
+  ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
+  while (fs1 > 6 && ctx.measureText(line1).width > textAreaW) { fs1--; ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
+
+  let fs2 = maxFs2;
   ctx.font = `300 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-  while (fs2 > 7 && ctx.measureText(line2).width > textAreaW) { fs2--; ctx.font = `300 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
+  while (fs2 > 5 && ctx.measureText(line2).width > textAreaW) { fs2--; ctx.font = `300 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
 
   ctx.textAlign    = "center";
   ctx.textBaseline = "middle";
 
   if (hasTwo) {
-    const lineGap  = Math.round(barH * 0.06);
-    const blockH   = fs1 + lineGap + fs2;
-    const startY   = barY + Math.round((barH - blockH) / 2);
+    const lineGap = Math.round(barH * 0.04);
+    const blockH  = fs1 + lineGap + fs2;
+    const startY  = barY + Math.round((barH - blockH) / 2);
 
     ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
     ctx.fillStyle = "#1a1a1a";
     ctx.fillText(line1, textCX, startY + fs1 / 2);
 
     ctx.font = `300 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-    ctx.fillStyle = "#444444";
+    ctx.fillStyle = "#555555";
     ctx.fillText(line2, textCX, startY + fs1 + lineGap + fs2 / 2);
   } else {
-    const single = line1 || line2;
     ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
     ctx.fillStyle = "#1a1a1a";
-    ctx.fillText(single, textCX, barY + barH / 2);
+    ctx.fillText(line1 || line2, textCX, barY + barH / 2);
   }
 
   return new Promise(resolve => canvas.toBlob(b => resolve(URL.createObjectURL(b)), "image/jpeg", 0.92));
