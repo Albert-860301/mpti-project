@@ -18,6 +18,7 @@ import {
   getStrings, saveStrings, resetStrings,
   getEquivRefs, saveEquivRefs,
   getCardImages, saveCardImage, removeCardImage,
+  getOverlayLogo, saveOverlayLogo, removeOverlayLogo,
   exportAllData,
 } from "../data/store";
 
@@ -1018,6 +1019,74 @@ function StringsEditor() {
 }
 
 /* ─── SETTINGS EDITOR ────────────────────────────────────────────── */
+/* ─── OVERLAY SETTINGS SUB-COMPONENT ────────────────────────────── */
+function OverlaySettings({ settings, upSetting }) {
+  const logoRef = useRef();
+  const [logo, setLogo] = useState(() => getOverlayLogo());
+
+  const handleLogoUpload = e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target.result;
+      saveOverlayLogo(dataUrl);
+      setLogo(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <p style={{ fontSize: 12, color: S.muted, margin: 0 }}>
+        在分享图底部压上固定 bar：Logo + 引导文字 + 二维码。用户长按保存的图片里会包含这条 bar。
+      </p>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+        <input type="checkbox" checked={settings.overlayEnabled !== false}
+          onChange={e => upSetting("overlayEnabled", e.target.checked)} style={{ width: 18, height: 18 }} />
+        <span style={{ fontSize: 13, fontWeight: 700, color: S.text }}>启用底栏 Overlay</span>
+      </label>
+      {settings.overlayEnabled !== false && (<>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>引导文字</label>
+            <input value={settings.overlayText || ""} onChange={e => upSetting("overlayText", e.target.value)} style={inputStyle()} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>底栏颜色</label>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
+              <input type="color" value={settings.overlayBarColor || "#1B2FA0"}
+                onChange={e => upSetting("overlayBarColor", e.target.value)}
+                style={{ width: 40, height: 36, border: "none", borderRadius: 6, cursor: "pointer", padding: 2 }} />
+              <input value={settings.overlayBarColor || "#1B2FA0"} onChange={e => upSetting("overlayBarColor", e.target.value)} style={{ ...inputStyle(), flex: 1 }} />
+            </div>
+          </div>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>二维码 URL（扫码跳转的链接）</label>
+          <input value={settings.overlayQrUrl || ""} onChange={e => upSetting("overlayQrUrl", e.target.value)}
+            placeholder="https://your-site.vercel.app" style={inputStyle(true)} />
+          {!settings.overlayQrUrl && <p style={{ fontSize: 10, color: S.orange, margin: "4px 0 0", fontWeight: 700 }}>⚠️ 未填写则不显示二维码</p>}
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>Logo 图片</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+            {logo ? (
+              <>
+                <img src={logo} alt="logo" style={{ height: 36, maxWidth: 120, objectFit: "contain", background: settings.overlayBarColor || "#1B2FA0", borderRadius: 6, padding: 4 }} />
+                <button onClick={() => { removeOverlayLogo(); setLogo(""); }} style={{ ...btn(S.red), padding: "6px 12px", fontSize: 11 }}>移除</button>
+              </>
+            ) : (
+              <button onClick={() => logoRef.current?.click()} style={{ ...btn("#F1F5F9", S.text), fontSize: 11 }}>📁 上传 Logo</button>
+            )}
+            <input ref={logoRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: "none" }} />
+          </div>
+          <p style={{ fontSize: 10, color: S.muted, marginTop: 4 }}>推荐白色透明 PNG，高度约 40px</p>
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 function SettingsEditor() {
   const [settings, setSettings] = useState(() => getSettings());
   const [saved, setSaved] = useState(false);
@@ -1107,6 +1176,10 @@ function SettingsEditor() {
             <p style={{ fontSize: 11, color: S.orange, margin: 0, fontWeight: 700 }}>⚠️ 未配置，图片只保存在本地浏览器（上线后会丢失）</p>
           )}
         </div>
+      ))}
+
+      {sectionCard("🖼 分享图底栏 Overlay", (
+        <OverlaySettings settings={settings} upSetting={upSetting} />
       ))}
 
       {sectionCard("🔒 LINE 登录弹窗", (

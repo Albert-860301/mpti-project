@@ -262,6 +262,11 @@ export const DEFAULT_SETTINGS = {
   cloudinaryUploadPreset: "mpti_upload",
   lineOaUrl: "",
   showLoginSheet: true,
+  // Share image overlay bar
+  overlayEnabled: true,
+  overlayQrUrl: "",
+  overlayText: "สแกนทดสอบ MBTI ของคุณ →",
+  overlayBarColor: "#1B2FA0",
   // JSONBin — cloud config sync
   jsonbinId: "6a0d553eee5a733b12eb417b",
   jsonbinKey: "$2a$10$WdDmvg43kpbqaSAc0NiGyuOi5E8hXZPJGz63DAqGiFzNUGyGMi8OK",
@@ -444,6 +449,19 @@ export function addUser(data) {
   writeJSON(KEYS.users, users);
 }
 export function clearUsers() { writeJSON(KEYS.users, []); }
+
+// Overlay logo image (stored under key "__overlay_logo__")
+export function getOverlayLogo() { return readJSON(KEYS.images, {}).__overlay_logo__ || ""; }
+export function saveOverlayLogo(dataUrl) {
+  const imgs = readJSON(KEYS.images, {});
+  imgs.__overlay_logo__ = dataUrl;
+  return writeJSON(KEYS.images, imgs);
+}
+export function removeOverlayLogo() {
+  const imgs = readJSON(KEYS.images, {});
+  delete imgs.__overlay_logo__;
+  writeJSON(KEYS.images, imgs);
+}
 
 // Type poster images
 export function getImages() { return readJSON(KEYS.images, {}); }
