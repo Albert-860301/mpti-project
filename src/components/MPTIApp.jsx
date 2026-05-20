@@ -94,12 +94,24 @@ function Screen({ children, name, isMobile }) {
   );
 }
 
+// Preload an array of image URLs silently in the background
+function preloadImages(srcs) {
+  srcs.forEach(src => { if (src) { const img = new Image(); img.src = src; } });
+}
+
 /* ── START ───────────────────────────────────────────────────── */
-function StartScreen({ onStart, stats, fakeCount, coverImage, coverContent, settings, isMobile }) {
+function StartScreen({ onStart, stats, fakeCount, coverImage, coverContent, settings, isMobile, types, images }) {
   const c = coverContent;
   const feats = [["🎯", c.feat1], ["💸", c.feat2], ["📊", c.feat3]];
   const threshold = settings.fakeCountThreshold ?? 13324;
   const displayCount = stats.total >= threshold ? stats.total : fakeCount;
+
+  // While user reads the start screen, silently preload all 16 type images in background
+  useEffect(() => {
+    const srcs = Object.keys(types || {}).map(k => imgSrc(images?.[k], `/images/types/${k}.jpg`));
+    const id = setTimeout(() => preloadImages(srcs), 800); // slight delay to not compete with cover
+    return () => clearTimeout(id);
+  }, []);
   return (
     <Screen name="start" isMobile={isMobile}>
       <PhoneShell isMobile={isMobile}>
@@ -118,7 +130,7 @@ function StartScreen({ onStart, stats, fakeCount, coverImage, coverContent, sett
           </p>
           <div style={{ marginTop: 14, borderRadius: 14, overflow: "hidden", aspectRatio: "5/3" }}>
             <img src={imgSrc(coverImage, "/images/cover/cover.jpg")} alt="cover" onError={hideOnErr}
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} decoding="async" />
           </div>
           <div style={{ marginTop: 14, display: "grid", gap: 8, paddingBottom: 16 }}>
             {feats.map(([icon, txt]) => (
@@ -223,7 +235,7 @@ function QuizScreen({ questions, questionImages, onDone, onBack, isMobile }) {
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "center", padding: "10px 0" }}>
             <div style={{ borderRadius: 14, overflow: "hidden", aspectRatio: "4/3", width: "100%" }}>
               <img src={imgSrc(qImg, `/images/questions/q${q.id}.jpg`)} alt="" onError={hideOnErr}
-                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} decoding="async" />
             </div>
           </div>
 
@@ -444,7 +456,7 @@ function PlanScreen({ result, cards, cardImages, onBack, onClaim, strings, isMob
                   <div style={{ flex: 1, minHeight: 100, maxHeight: 200, padding: "8px 0" }}>
                     <div style={{ borderRadius: 12, overflow: "hidden", width: "100%", height: "100%" }}>
                       <img src={imgSrc(cardImages?.[card.no], `/images/cards/card${card.no}.jpg`)} alt="" onError={hideOnErr}
-                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} decoding="async" />
                     </div>
                   </div>
                   <div style={{ padding: "8px 12px", borderRadius: 14, background: "rgba(255,61,90,.07)", border: "1px solid rgba(255,61,90,.13)", marginBottom: 8 }}>
@@ -505,7 +517,7 @@ function SharePreview({ result, images, strings, onClose }) {
       <motion.div onClick={e => e.stopPropagation()} initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
         style={{ width: "100%", maxWidth: 360, borderRadius: 24, overflow: "hidden", background: C.phone, boxShadow: "0 24px 70px rgba(15,23,42,.25)" }}>
         <div style={{ overflow: "hidden", position: "relative" }}>
-          <img src={src} alt={p.name} onError={hideOnErr}
+          <img src={src} alt={p.name} onError={hideOnErr} decoding="async"
             style={{ width: "100%", height: "auto", display: "block" }} />
           {isTouch && (
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "10px 14px", background: "rgba(15,23,42,.62)", backdropFilter: "blur(4px)", textAlign: "center" }}>
@@ -645,7 +657,7 @@ function MPTIAppContent() {
   return (
     <Shell>
       <AnimatePresence mode="wait">
-        {phase === "start"  && <StartScreen onStart={() => setPhase("quiz")} stats={stats} fakeCount={fakeCount} coverImage={coverImage} coverContent={coverContent} settings={settings} isMobile={isMobile} />}
+        {phase === "start"  && <StartScreen onStart={() => setPhase("quiz")} stats={stats} fakeCount={fakeCount} coverImage={coverImage} coverContent={coverContent} settings={settings} isMobile={isMobile} types={types} images={images} />}
         {phase === "quiz"   && <QuizScreen questions={questions} questionImages={questionImages} onDone={handleDone} onBack={() => setPhase("start")} isMobile={isMobile} />}
         {phase === "calc"   && <CalcScreen onDone={handleCalc} strings={strings} isMobile={isMobile} result={result} images={images} />}
         {phase === "result" && result && <ResultScreen result={result} equivRefs={equivRefs} onShare={() => { recordShare(); setShowShare(true); }} onPlan={() => setPhase("plan")} onRestart={() => { setResult(null); setPhase("start"); }} strings={strings} isMobile={isMobile} />}
