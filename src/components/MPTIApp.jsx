@@ -12,10 +12,9 @@ import {
 function imgSrc(stored, publicPath) {
   return stored && stored !== "" ? stored : publicPath;
 }
-// Hide wrapper if image fails to load (file doesn't exist on server)
+// On image load error: hide the image but keep the wrapper space to avoid layout shift
 function hideOnErr(e) {
-  const wrap = e.currentTarget.parentElement;
-  if (wrap) wrap.style.display = "none";
+  e.currentTarget.style.visibility = "hidden";
 }
 
 const C = {
@@ -92,11 +91,6 @@ function Screen({ children, name, isMobile }) {
       {children}
     </motion.div>
   );
-}
-
-// Preload an array of image URLs silently in the background
-function preloadImages(srcs) {
-  srcs.forEach(src => { if (src) { const img = new Image(); img.src = src; } });
 }
 
 // (Overlay compositing has been moved to admin — images come pre-baked from Cloudinary)
@@ -459,9 +453,9 @@ function PlanScreen({ result, cards, cardImages, onBack, onClaim, strings, isMob
                   <div style={{ padding: "8px 12px", borderRadius: 14, background: "rgba(255,61,90,.07)", border: "1px solid rgba(255,61,90,.13)", marginBottom: 8 }}>
                     <div style={{ color: C.faint, fontSize: 9, fontWeight: 900, letterSpacing: 1 }}>ประหยัดได้</div>
                     <div style={{ color: C.red, fontWeight: 950, fontSize: 22 }}>
-                      ฿{card.saveRatio
-                        ? Math.round(monthlyWaste * card.saveRatio / 10) * 10
-                        : card.save}
+                      {card.saveRatio
+                        ? `฿${Math.round(monthlyWaste * card.saveRatio / 10) * 10}`
+                        : (typeof card.save === "string" && card.save.startsWith("฿") ? card.save : `฿${card.save}`)}
                       <span style={{ fontSize: 12 }}>/เดือน</span>
                     </div>
                   </div>
@@ -498,12 +492,18 @@ function SharePreview({ result, images, strings, onClose, showLineMode }) {
   const handleCopy = async () => {
     setStatus("loading");
     try {
-      const res = await fetch(src);
+      // Use no-cors-safe approach: fetch with cors, fallback to opening in new tab
+      const res = await fetch(src, { mode: "cors" });
+      if (!res.ok) throw new Error("fetch failed");
       const blob = await res.blob();
       await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/jpeg"]: blob })]);
       setStatus("done");
       setTimeout(() => { setStatus("idle"); onClose(); }, 1400);
-    } catch (_) { setStatus("idle"); }
+    } catch (_) {
+      // Fallback: open image in new tab for manual save
+      window.open(src, "_blank");
+      setStatus("idle");
+    }
   };
 
   const copyLabel = status === "loading" ? "กำลังโหลด…"
@@ -667,12 +667,13 @@ function MPTIAppContent() {
 
   const closeSuccess = () => {
     setShowSuccess(false);
-    window.open(settings.redfingerUrl, "_blank");
+    // Open LINE OA if configured (for tracking), then redirect to product
+    if (settings.lineOaUrl && !isLineMode) window.open(settings.lineOaUrl, "_blank");
+    if (settings.redfingerUrl) window.open(settings.redfingerUrl, "_blank");
   };
 
-  // No-LINE mode: open LINE OA for tracking, then auto-redirect to H5 via countdown
+  // No-LINE mode: show success first, LINE OA opens after countdown via closeSuccess
   const handleClaimNoLine = () => {
-    if (settings.lineOaUrl) window.open(settings.lineOaUrl, "_blank");
     setShowSuccess(true);
   };
 

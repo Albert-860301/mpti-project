@@ -1,10 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import QRCode from "qrcode";
 import {
   DEFAULT_QUESTIONS, DEFAULT_TYPES, DEFAULT_RECOVERY_CARDS,
   DEFAULT_COVER_CONTENT, DEFAULT_SCORING, DEFAULT_COMBO_MAP,
   DEFAULT_SETTINGS, DEFAULT_STRINGS, DEFAULT_EQUIV_REFS,
-  syncToServer,
+  syncToServer, loadFromServer,
   getStats, getQuestions, saveQuestions, resetQuestions,
   getTypes, saveTypes, resetTypes,
   getRecoveryCards, saveRecoveryCards,
@@ -146,28 +146,32 @@ async function buildShareImageAdmin(src, { overlayText, overlayText2, overlayQrU
   const W = img.naturalWidth  || img.width;
   const H = img.naturalHeight || img.height;
 
-  // Bar height kept compact; font sizes shrink to fit 2 lines within it
-  const barH = Math.round(H * 0.07);
+  // Bar sits BELOW the image — canvas is taller than original
+  const barH = Math.round(H * 0.085);
+  const totalH = H + barH;
   const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
+  canvas.width = W; canvas.height = totalH;
   const ctx = canvas.getContext("2d");
+
+  // ── Draw original image at top, full size ─────────────────────
   ctx.drawImage(img, 0, 0, W, H);
 
-  // ── Semi-transparent light-gray bar at bottom ──────────────────
-  ctx.fillStyle = "rgba(235, 235, 235, 0.78)";
-  ctx.fillRect(0, H - barH, W, barH);
-  const barY = H - barH;
-  const hPad = Math.round(W * 0.03);   // horizontal padding
-  const vPad = Math.round(barH * 0.1); // vertical padding
+  // ── Dark bar below image ──────────────────────────────────────
+  const barY = H;  // bar starts right where image ends
+  ctx.fillStyle = "#1a1a1a";
+  ctx.fillRect(0, barY, W, barH);
 
-  // ── QR code — right side ──────────────────────────────────────
+  const hPad = Math.round(W * 0.035);
+  const vPad = Math.round(barH * 0.12);
+
+  // ── QR code — right side (white on dark) ──────────────────────
   const qrSize = barH - vPad * 2;
   let qrLeftEdge = W - hPad;
   if (overlayQrUrl) {
     try {
       const qrDataUrl = await QRCode.toDataURL(overlayQrUrl, {
         width: qrSize * 2, margin: 1,
-        color: { dark: "#1a1a1a", light: "#EBEBEB" },
+        color: { dark: "#ffffff", light: "#1a1a1a" },  // white QR on dark bg
       });
       const qrImg = await loadImgAdmin(qrDataUrl);
       qrLeftEdge = W - qrSize - hPad;
@@ -184,11 +188,11 @@ async function buildShareImageAdmin(src, { overlayText, overlayText2, overlayQrU
       const logoW = Math.round(logoImg.naturalWidth * (logoH / logoImg.naturalHeight));
       const logoY = barY + Math.round((barH - logoH) / 2);
       ctx.drawImage(logoImg, hPad, logoY, logoW, logoH);
-      contentStartX = hPad + logoW + Math.round(hPad * 0.8);
+      contentStartX = hPad + logoW + Math.round(hPad * 0.9);
     } catch (_) {}
   }
 
-  // ── Two-line text — between logo and QR ───────────────────────
+  // ── Two-line white text — between logo and QR ─────────────────
   const textAreaW = qrLeftEdge - contentStartX - hPad;
   const textCX    = contentStartX + textAreaW / 2;
 
@@ -196,36 +200,35 @@ async function buildShareImageAdmin(src, { overlayText, overlayText2, overlayQrU
   const line2  = overlayText2 || "";
   const hasTwo = line1 && line2;
 
-  // With a compact bar, two lines share the vertical space — start small
-  const maxFs1 = Math.round(barH * (hasTwo ? 0.30 : 0.45));
-  const maxFs2 = Math.round(barH * 0.22);
+  const maxFs1 = Math.round(barH * (hasTwo ? 0.32 : 0.45));
+  const maxFs2 = Math.round(barH * 0.24);
 
   let fs1 = maxFs1;
-  ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-  while (fs1 > 6 && ctx.measureText(line1).width > textAreaW) { fs1--; ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
+  ctx.font = `500 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
+  while (fs1 > 6 && ctx.measureText(line1).width > textAreaW) { fs1--; ctx.font = `500 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
 
   let fs2 = maxFs2;
-  ctx.font = `300 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-  while (fs2 > 5 && ctx.measureText(line2).width > textAreaW) { fs2--; ctx.font = `300 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
+  ctx.font = `400 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`;
+  while (fs2 > 5 && ctx.measureText(line2).width > textAreaW) { fs2--; ctx.font = `400 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`; }
 
   ctx.textAlign    = "center";
   ctx.textBaseline = "middle";
 
   if (hasTwo) {
-    const lineGap = Math.round(barH * 0.04);
+    const lineGap = Math.round(barH * 0.10);
     const blockH  = fs1 + lineGap + fs2;
     const startY  = barY + Math.round((barH - blockH) / 2);
 
-    ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-    ctx.fillStyle = "#1a1a1a";
+    ctx.font = `500 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
+    ctx.fillStyle = "#ffffff";
     ctx.fillText(line1, textCX, startY + fs1 / 2);
 
-    ctx.font = `300 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-    ctx.fillStyle = "#555555";
+    ctx.font = `400 ${fs2}px 'Kanit', 'Noto Sans Thai', sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.65)";  // softer white for secondary
     ctx.fillText(line2, textCX, startY + fs1 + lineGap + fs2 / 2);
   } else {
-    ctx.font = `400 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
-    ctx.fillStyle = "#1a1a1a";
+    ctx.font = `500 ${fs1}px 'Kanit', 'Noto Sans Thai', sans-serif`;
+    ctx.fillStyle = "#ffffff";
     ctx.fillText(line1 || line2, textCX, barY + barH / 2);
   }
 
@@ -744,6 +747,7 @@ function TypesEditor() {
 /* ─── IMAGE MANAGER ──────────────────────────────────────────────── */
 function ImageManager() {
   const [images, setImages] = useState(() => getImages());
+  const [cacheBust, setCacheBust] = useState(() => Date.now()); // force browser re-fetch
   const types = getTypes();
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(null);
@@ -776,7 +780,7 @@ function ImageManager() {
 
       const ok = saveImage(key, finalUrl);
       if (!ok) alert("❌ 储存失败：浏览器储存空间不足，请先删除其他图片再试。");
-      else setImages(prev => ({ ...prev, [key]: finalUrl }));
+      else { setImages(prev => ({ ...prev, [key]: finalUrl })); setCacheBust(Date.now()); }
       setUploading(null);
       setStatus("");
       syncToServer(); // push image URL mapping to JSONBin
@@ -788,9 +792,74 @@ function ImageManager() {
     removeImage(key); const n = { ...images }; delete n[key]; setImages(n);
   };
 
+  const refreshImages = () => { setImages(getImages()); setCacheBust(Date.now()); };
+
+  const [recovering, setRecovering] = useState(false);
+  const recoverFromCloudinary = async () => {
+    setRecovering(true);
+    setStatus("正在从 Cloudinary 恢复图片…");
+    const settings = getSettings();
+    const cloudName = settings.cloudinaryCloudName?.trim();
+    if (!cloudName) { alert("请先在 Settings 配置 Cloudinary Cloud Name"); setRecovering(false); setStatus(""); return; }
+
+    const recovered = {};
+    const recoveredRaw = {};
+    const allKeys = Object.keys(types);
+
+    for (const key of allKeys) {
+      // Try baked version first, then raw
+      const bakedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}_baked.jpg`;
+      const rawUrl   = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}.jpg`;
+
+      try {
+        const res = await fetch(bakedUrl, { method: "HEAD" });
+        if (res.ok) {
+          recovered[key] = bakedUrl;
+          recoveredRaw[key] = rawUrl;
+          setStatus(`✓ 找到 ${key} (已合成版)`);
+          continue;
+        }
+      } catch (_) {}
+
+      try {
+        const res = await fetch(rawUrl, { method: "HEAD" });
+        if (res.ok) {
+          recovered[key] = rawUrl;
+          recoveredRaw[key] = rawUrl;
+          setStatus(`✓ 找到 ${key} (原图)`);
+          continue;
+        }
+      } catch (_) {}
+
+      setStatus(`✗ 未找到 ${key}`);
+    }
+
+    const count = Object.keys(recovered).length;
+    if (count > 0) {
+      // Save to localStorage
+      for (const [k, v] of Object.entries(recovered)) { saveImage(k, v); }
+      for (const [k, v] of Object.entries(recoveredRaw)) { saveImageRaw(k, v); }
+      setImages(getImages());
+      setCacheBust(Date.now());
+      await syncToServer();
+      setStatus(`✅ 恢复了 ${count}/${allKeys.length} 张图片并已同步`);
+    } else {
+      setStatus("❌ Cloudinary 上未找到任何图片，需要重新上传");
+    }
+    setRecovering(false);
+  };
+
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>🖼 Image Manager</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, gap: 8, flexWrap: "wrap" }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800 }}>🖼 Image Manager</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={recoverFromCloudinary} disabled={recovering} style={{ ...btn(S.orange, "#fff"), padding: "6px 14px", fontSize: 12 }}>
+            {recovering ? "⏳ 恢复中…" : "☁️ 从Cloudinary恢复"}
+          </button>
+          <button onClick={refreshImages} style={{ ...btn("#F1F5F9", S.text), padding: "6px 14px", fontSize: 12 }}>🔄 刷新</button>
+        </div>
+      </div>
       <p style={{ color: S.muted, fontSize: 13, marginBottom: 4 }}>为每种人格类型上传海报图片。如果后台已配置 Overlay，上传时会自动合成。</p>
       <div style={{ marginBottom: 16 }}><SizeHint text="实际储存尺寸：540×960px（9:16 竖版海报）" /></div>
       {status && <div style={{ padding: "8px 14px", background: "#EFF6FF", borderRadius: 8, fontSize: 12, fontWeight: 700, color: S.blue, marginBottom: 12 }}>⏳ {status}</div>}
@@ -802,7 +871,7 @@ function ImageManager() {
             <div key={key} style={{ ...cardStyle(), textAlign: "center", padding: 12 }}>
               {img ? (
                 <div style={{ position: "relative", marginBottom: 8 }}>
-                  <img src={img} alt={t.name} style={{ width: "100%", borderRadius: 10, aspectRatio: "9/16", objectFit: "cover" }} />
+                  <img src={img.startsWith("http") ? `${img}${img.includes("?") ? "&" : "?"}v=${cacheBust}` : img} alt={t.name} style={{ width: "100%", borderRadius: 10, aspectRatio: "9/16", objectFit: "cover" }} />
                   <button onClick={() => handleRemove(key)} style={{ position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: 12, background: S.red, color: "#fff", border: "none", fontSize: 12, cursor: "pointer" }}>✕</button>
                 </div>
               ) : (
@@ -1173,7 +1242,7 @@ function StringsEditor() {
 
 /* ─── SETTINGS EDITOR ────────────────────────────────────────────── */
 /* ─── OVERLAY SETTINGS SUB-COMPONENT ────────────────────────────── */
-function OverlaySettings({ settings, upSetting }) {
+function OverlaySettings({ settings, upSetting, onImagesUpdated }) {
   const logoRef = useRef();
   const [logo, setLogo] = useState(() => getOverlayLogo());
   const [rebaking, setRebaking] = useState(false);
@@ -1188,6 +1257,38 @@ function OverlaySettings({ settings, upSetting }) {
       setLogo(dataUrl);
     };
     reader.readAsDataURL(file);
+  };
+
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  const generatePreview = async () => {
+    setPreviewing(true);
+    setPreviewUrl(null);
+    try {
+      // Find any existing image to use as preview sample
+      const images = getImages();
+      const rawImages = getImagesRaw();
+      let sampleUrl = null;
+      for (const [key, url] of Object.entries(images)) {
+        if (!url || key === "__overlay_logo__") continue;
+        sampleUrl = rawImages[key] || url;
+        break;
+      }
+      if (!sampleUrl) { alert("没有可用的图片，请先上传至少一张人格图"); setPreviewing(false); return; }
+
+      const logoSrc = getOverlayLogo() || null;
+      const blobUrl = await buildShareImageAdmin(sampleUrl, {
+        overlayText:  settings.overlayText,
+        overlayText2: settings.overlayText2,
+        overlayQrUrl: settings.overlayQrUrl,
+        logoSrc,
+      });
+      setPreviewUrl(blobUrl);
+    } catch (err) {
+      alert("预览生成失败: " + (err.message || err));
+    }
+    setPreviewing(false);
   };
 
   const reBakeAll = async () => {
@@ -1223,6 +1324,7 @@ function OverlaySettings({ settings, upSetting }) {
     await syncToServer();
     push("✅ 全部完成！前端刷新后即可看到新图片。");
     setRebaking(false);
+    if (onImagesUpdated) onImagesUpdated();  // refresh ImageManager to show latest
   };
 
   return (
@@ -1246,7 +1348,7 @@ function OverlaySettings({ settings, upSetting }) {
             <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>第二行文字（较小，细字重，灰色）</label>
             <input value={settings.overlayText2 || ""} onChange={e => upSetting("overlayText2", e.target.value)} style={inputStyle()} placeholder="e.g. ค้นพบบุคลิกการใช้เงินของคุณ →" />
           </div>
-          <p style={{ fontSize: 10, color: S.muted, margin: 0 }}>底栏：Logo（左）+ 两行文字（中）+ 二维码（右）。背景为半透明浅灰，文字深色不加粗。</p>
+          <p style={{ fontSize: 10, color: S.muted, margin: 0 }}>深色底栏在图片下方：Logo（左）+ 两行白色文字（中）+ 白色二维码（右）。不遮挡图片内容。</p>
         </div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>二维码 URL（扫码跳转的链接）</label>
@@ -1270,11 +1372,34 @@ function OverlaySettings({ settings, upSetting }) {
           <p style={{ fontSize: 10, color: S.muted, marginTop: 4 }}>推荐白色透明 PNG，高度约 40px</p>
         </div>
 
+        {/* Preview */}
+        <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: S.text, margin: "0 0 6px" }}>👁 效果预览</p>
+          <p style={{ fontSize: 10, color: S.muted, margin: "0 0 8px" }}>
+            先预览确认效果满意后，再点合成到所有图片。预览使用第一张现有图片生成。
+          </p>
+          <button
+            onClick={generatePreview}
+            disabled={previewing}
+            style={{ ...btn(previewing ? "#94A3B8" : S.purple), fontSize: 12, marginBottom: 10 }}
+          >
+            {previewing ? "⏳ 生成中…" : "👁 生成预览"}
+          </button>
+          {previewUrl && (
+            <div style={{ marginTop: 8, borderRadius: 12, overflow: "hidden", border: `1px solid ${S.border}`, background: "#000" }}>
+              <img src={previewUrl} alt="overlay preview" style={{ width: "100%", height: "auto", display: "block" }} />
+              <div style={{ padding: "8px 12px", background: S.card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: S.green, fontWeight: 700 }}>✓ 预览效果如上</span>
+                <span style={{ fontSize: 10, color: S.muted }}>满意后点下方「合成到所有图片」</span>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Re-bake button */}
         <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 12 }}>
           <p style={{ fontSize: 11, color: S.muted, margin: "0 0 8px" }}>
-            设置完毕后，点击下方按钮将 Overlay 合成到所有人格图片中并上传 Cloudinary。
-            前端用户无需任何操作，刷新后立即看到更新。
+            确认预览满意后，点击下方按钮将 Overlay 合成到所有人格图片中并上传 Cloudinary。
           </p>
           <button
             onClick={reBakeAll}
@@ -1296,7 +1421,7 @@ function OverlaySettings({ settings, upSetting }) {
   );
 }
 
-function SettingsEditor() {
+function SettingsEditor({ onImagesUpdated }) {
   const [settings, setSettings] = useState(() => getSettings());
   const [saved, setSaved] = useState(false);
   const [pwConfirm, setPwConfirm] = useState("");
@@ -1395,7 +1520,7 @@ function SettingsEditor() {
       ))}
 
       {sectionCard("🖼 分享图底栏 Overlay", (
-        <OverlaySettings settings={settings} upSetting={upSetting} />
+        <OverlaySettings settings={settings} upSetting={upSetting} onImagesUpdated={onImagesUpdated} />
       ))}
 
       {sectionCard("🔒 LINE 登录弹窗", (
@@ -1558,8 +1683,26 @@ export default function AdminApp() {
   const [authed, setAuthed] = useState(false);
   const [tab, setTab] = useState("dashboard");
   const [sideOpen, setSideOpen] = useState(true);
+  const [imgVer, setImgVer] = useState(0);  // bump to force ImageManager refresh after re-bake
+  const [synced, setSynced] = useState(false);
+
+  // Pull latest data from JSONBin on admin load (so images/settings are up to date)
+  useEffect(() => {
+    if (!authed) return;
+    loadFromServer().finally(() => { setSynced(true); setImgVer(v => v + 1); });
+  }, [authed]);
 
   if (!authed) return <LoginGate onAuth={setAuthed} />;
+
+  if (!synced) return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: S.bg, fontFamily: "Kanit, system-ui, sans-serif" }}>
+      <div style={{ textAlign: "center", color: S.muted }}>
+        <div style={{ width: 40, height: 40, borderRadius: 99, border: `4px solid ${S.border}`, borderTopColor: S.accent, margin: "0 auto 12px", animation: "spin 0.8s linear infinite" }} />
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>正在从云端同步数据…</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: S.bg, fontFamily: "Kanit, system-ui, sans-serif", color: S.text }}>
@@ -1586,11 +1729,11 @@ export default function AdminApp() {
           {tab === "cover"     && <CoverEditor />}
           {tab === "questions" && <QuestionsEditor />}
           {tab === "types"     && <TypesEditor />}
-          {tab === "images"    && <ImageManager />}
+          {tab === "images"    && <ImageManager key={`img-${imgVer}`} />}
           {tab === "cards"     && <CardsEditor />}
           {tab === "scoring"   && <ScoringEditor />}
           {tab === "strings"   && <StringsEditor />}
-          {tab === "settings"  && <SettingsEditor />}
+          {tab === "settings"  && <SettingsEditor onImagesUpdated={() => setImgVer(v => v + 1)} />}
           {tab === "data"      && <DataPanel />}
         </div>
       </div>

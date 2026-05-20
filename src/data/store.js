@@ -631,6 +631,7 @@ function collectTextData() {
     equivRefs:     readJSON(KEYS.equivRefs,     null),
     // image URL paths (Cloudinary short strings — no base64)
     images:        imagesForSync,
+    imagesRaw:     readJSON(KEYS.imagesRaw,     null),  // original pre-overlay URLs
     questionImages:readJSON(KEYS.questionImages,null),
     cardImages:    readJSON(KEYS.cardImages,    null),
   };
@@ -650,6 +651,7 @@ function applyServerData(d) {
   if (d.comboMap)       writeJSON(KEYS.comboMap,       d.comboMap);
   if (d.equivRefs)      writeJSON(KEYS.equivRefs,      d.equivRefs);
   if (d.images)         writeJSON(KEYS.images,         d.images);
+  if (d.imagesRaw)      writeJSON(KEYS.imagesRaw,      d.imagesRaw);
   if (d.questionImages) writeJSON(KEYS.questionImages, d.questionImages);
   if (d.cardImages)     writeJSON(KEYS.cardImages,     d.cardImages);
 }
@@ -661,6 +663,30 @@ export async function syncToServer() {
   // ── JSONBin (production) ──────────────────────────────────────
   if (jsonbinId && jsonbinKey) {
     try {
+      // SAFEGUARD: fetch existing server data first and merge —
+      // never overwrite non-empty server fields with empty local fields
+      // (prevents incognito/cleared localStorage from wiping server data)
+      try {
+        const existing = await fetch(`https://api.jsonbin.io/v3/b/${jsonbinId}/latest`, {
+          headers: { "X-Master-Key": jsonbinKey },
+        });
+        if (existing.ok) {
+          const ej = await existing.json();
+          const server = ej.record ?? ej;
+          // For each key: if local value is null/empty but server has data, keep server's
+          for (const key of Object.keys(server)) {
+            const local  = data[key];
+            const remote = server[key];
+            const localEmpty  = local == null || (typeof local === "object" && Object.keys(local).length === 0);
+            const remoteHasData = remote != null && !(typeof remote === "object" && Object.keys(remote).length === 0);
+            if (localEmpty && remoteHasData) {
+              console.log(`[MPTI] syncToServer: keeping server value for "${key}" (local is empty)`);
+              data[key] = remote;
+            }
+          }
+        }
+      } catch (_) { /* merge failed, proceed with local data */ }
+
       const res = await fetch(`https://api.jsonbin.io/v3/b/${jsonbinId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "X-Master-Key": jsonbinKey },
