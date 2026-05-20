@@ -764,26 +764,15 @@ function ImageManager() {
       const rawDiskUrl = await saveImageToDisk("types", `${key}.jpg`, compressed);
       const rawUrl = rawDiskUrl || compressed;
 
-      // Always persist the original (pre-overlay) URL for future re-baking
+      // Save as both display image and raw original — no auto-bake
+      // User should use Settings → "合成到所有图片" to bake overlay onto all images
       saveImageRaw(key, rawUrl);
-
-      // Auto-bake overlay if fully configured
-      let finalUrl = rawUrl;
-      const settings = getSettings();
-      if (settings.overlayEnabled && settings.overlayQrUrl) {
-        setStatus(`合成 ${key}…`);
-        try {
-          const bakedUrl = await bakeAndUpload(key, rawUrl, settings);
-          if (bakedUrl) finalUrl = bakedUrl;
-        } catch (_) { /* fall back to raw */ }
-      }
-
-      const ok = saveImage(key, finalUrl);
+      const ok = saveImage(key, rawUrl);
       if (!ok) alert("❌ 储存失败：浏览器储存空间不足，请先删除其他图片再试。");
-      else { setImages(prev => ({ ...prev, [key]: finalUrl })); setCacheBust(Date.now()); }
+      else { setImages(prev => ({ ...prev, [key]: rawUrl })); setCacheBust(Date.now()); }
       setUploading(null);
       setStatus("");
-      syncToServer(); // push image URL mapping to JSONBin
+      syncToServer();
     };
     reader.readAsDataURL(file); e.target.value = "";
   };
