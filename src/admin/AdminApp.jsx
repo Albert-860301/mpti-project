@@ -801,30 +801,40 @@ function ImageManager() {
 
     const recovered = {};
     const recoveredRaw = {};
-    let needsRaw = 0;
     const allKeys = Object.keys(types);
 
     for (const key of allKeys) {
-      const bakedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}_baked.jpg`;
       const rawUrl   = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}.jpg`;
+      const bakedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}_baked.jpg`;
+      // Cloudinary transform: crop off bottom 7% (the old overlay bar) to recover clean original
+      const croppedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/c_crop,g_north,h_0.93/mpti/types/${key}_baked.jpg`;
 
-      // Prefer raw (original without bar) for clean re-baking
-      const hasRaw = await testImage(rawUrl);
-      const hasBaked = await testImage(bakedUrl);
-
-      if (hasRaw) {
+      // 1. Best: raw original exists
+      if (await testImage(rawUrl)) {
         recovered[key] = rawUrl;
         recoveredRaw[key] = rawUrl;
         setStatus(`✓ ${key} (原图)`);
-      } else if (hasBaked) {
-        // Only baked exists — display it but DON'T save as raw (it has old bar)
-        recovered[key] = bakedUrl;
-        // Leave imagesRaw empty for this key so user knows to re-upload
-        needsRaw++;
-        setStatus(`⚠ ${key} (仅旧合成版，需重新上传原图)`);
-      } else {
-        setStatus(`✗ ${key} 未找到`);
+        continue;
       }
+      // 2. Fallback: crop the old bar off the baked version via Cloudinary transform
+      if (await testImage(croppedUrl)) {
+        // Use cropped version as the clean source, re-upload it as new raw
+        setStatus(`裁剪 ${key}…`);
+        try {
+          const croppedDiskUrl = await saveImageToDisk("types", `${key}.jpg`, croppedUrl);
+          const finalRaw = croppedDiskUrl || croppedUrl;
+          recovered[key] = finalRaw;
+          recoveredRaw[key] = finalRaw;
+          setStatus(`✓ ${key} (已裁剪旧bar)`);
+        } catch (_) {
+          // If re-upload fails, just use the cropped URL directly
+          recovered[key] = croppedUrl;
+          recoveredRaw[key] = croppedUrl;
+          setStatus(`✓ ${key} (裁剪URL)`);
+        }
+        continue;
+      }
+      setStatus(`✗ ${key} 未找到`);
     }
 
     const count = Object.keys(recovered).length;
@@ -834,9 +844,7 @@ function ImageManager() {
       setImages(getImages());
       setCacheBust(Date.now());
       await syncToServer();
-      let msg = `✅ 恢复了 ${count}/${allKeys.length} 张图片`;
-      if (needsRaw > 0) msg += `\n⚠️ 其中 ${needsRaw} 张是旧合成版（带旧bar），请重新上传原图后再合成新bar`;
-      setStatus(msg);
+      setStatus(`✅ 恢复了 ${count}/${allKeys.length} 张图片（已自动裁掉旧bar）并同步到云端`);
     } else {
       setStatus("❌ Cloudinary 上未找到任何图片，需要重新上传");
     }
