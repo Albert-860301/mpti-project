@@ -261,6 +261,9 @@ export const DEFAULT_SETTINGS = {
   cloudinaryCloudName: "dglzki3sy",
   cloudinaryUploadPreset: "mpti_upload",
   lineOaUrl: "",
+  // JSONBin — cloud config sync (get free account at jsonbin.io)
+  jsonbinId: "",
+  jsonbinKey: "",
 };
 
 // ─── DEFAULT EQUIV REFERENCES ───────────────────────────────────
@@ -592,33 +595,69 @@ function collectTextData() {
   };
 }
 
+function applyServerData(d) {
+  if (d.coverContent)   writeJSON(KEYS.coverContent,   d.coverContent);
+  if (d.strings)        writeJSON(KEYS.strings,        d.strings);
+  if (d.settings)       writeJSON(KEYS.settings,       d.settings);
+  if (d.questions)      writeJSON(KEYS.questions,      d.questions);
+  if (d.types)          writeJSON(KEYS.types,          d.types);
+  if (d.recovery)       writeJSON(KEYS.recovery,       d.recovery);
+  if (d.scoring)        writeJSON(KEYS.scoring,        d.scoring);
+  if (d.comboMap)       writeJSON(KEYS.comboMap,       d.comboMap);
+  if (d.equivRefs)      writeJSON(KEYS.equivRefs,      d.equivRefs);
+  if (d.images)         writeJSON(KEYS.images,         d.images);
+  if (d.questionImages) writeJSON(KEYS.questionImages, d.questionImages);
+  if (d.cardImages)     writeJSON(KEYS.cardImages,     d.cardImages);
+}
+
 export async function syncToServer() {
+  const { jsonbinId, jsonbinKey } = getSettings();
+  const data = collectTextData();
+
+  // ── JSONBin (production) ──────────────────────────────────────
+  if (jsonbinId && jsonbinKey) {
+    try {
+      await fetch(`https://api.jsonbin.io/v3/b/${jsonbinId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "X-Master-Key": jsonbinKey },
+        body: JSON.stringify(data),
+      });
+      return;
+    } catch (_) { /* fall through */ }
+  }
+
+  // ── Local Vite dev server (development) ───────────────────────
   try {
     await fetch("/api/save-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(collectTextData()),
+      body: JSON.stringify(data),
     });
-  } catch (_) { /* dev server not available — silently ignore */ }
+  } catch (_) { /* silently ignore */ }
 }
 
 export async function loadFromServer() {
+  const { jsonbinId, jsonbinKey } = getSettings();
+
+  // ── JSONBin (production) ──────────────────────────────────────
+  if (jsonbinId && jsonbinKey) {
+    try {
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${jsonbinId}/latest`, {
+        headers: { "X-Master-Key": jsonbinKey },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        applyServerData(json.record ?? json);
+        return true;
+      }
+    } catch (_) { /* fall through to store.json */ }
+  }
+
+  // ── Static store.json fallback ────────────────────────────────
   try {
     const res = await fetch(`/data/store.json?t=${Date.now()}`);
     if (!res.ok) return false;
-    const d = await res.json();
-    if (d.coverContent)   writeJSON(KEYS.coverContent,   d.coverContent);
-    if (d.strings)        writeJSON(KEYS.strings,        d.strings);
-    if (d.settings)       writeJSON(KEYS.settings,       d.settings);
-    if (d.questions)      writeJSON(KEYS.questions,      d.questions);
-    if (d.types)          writeJSON(KEYS.types,          d.types);
-    if (d.recovery)       writeJSON(KEYS.recovery,       d.recovery);
-    if (d.scoring)        writeJSON(KEYS.scoring,        d.scoring);
-    if (d.comboMap)       writeJSON(KEYS.comboMap,       d.comboMap);
-    if (d.equivRefs)      writeJSON(KEYS.equivRefs,      d.equivRefs);
-    if (d.images)         writeJSON(KEYS.images,         d.images);
-    if (d.questionImages) writeJSON(KEYS.questionImages, d.questionImages);
-    if (d.cardImages)     writeJSON(KEYS.cardImages,     d.cardImages);
+    applyServerData(await res.json());
     return true;
   } catch (_) { return false; }
 }

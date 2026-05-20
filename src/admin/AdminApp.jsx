@@ -1059,6 +1059,30 @@ function SettingsEditor() {
         </div>
       ))}
 
+      {sectionCard("🔄 JSONBin 云同步（上线必填）", (
+        <div style={{ display: "grid", gap: 10 }}>
+          <p style={{ fontSize: 12, color: S.muted, margin: 0 }}>
+            配置后，Admin 的所有改动会实时同步给所有用户，无需重新部署。<br />
+            免费注册 → <b>jsonbin.io</b> → 创建 Bin → 拿到 Bin ID 和 Master Key。
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>Bin ID</label>
+              <input value={settings.jsonbinId || ""} onChange={e => upSetting("jsonbinId", e.target.value)} placeholder="e.g. 6649a1..." style={inputStyle(true)} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: S.muted }}>Master Key（X-Master-Key）</label>
+              <input type="password" value={settings.jsonbinKey || ""} onChange={e => upSetting("jsonbinKey", e.target.value)} placeholder="$2a$10$..." style={inputStyle(true)} />
+            </div>
+          </div>
+          {settings.jsonbinId && settings.jsonbinKey ? (
+            <p style={{ fontSize: 11, color: S.green, margin: 0, fontWeight: 700 }}>✅ 已配置，保存后改动立即同步到所有用户</p>
+          ) : (
+            <p style={{ fontSize: 11, color: S.red, margin: 0, fontWeight: 700 }}>❌ 未配置，Admin 改动不会同步给其他用户</p>
+          )}
+        </div>
+      ))}
+
       {sectionCard("☁️ Cloudinary 图片托管（上线必填）", (
         <div style={{ display: "grid", gap: 10 }}>
           <p style={{ fontSize: 12, color: S.muted, margin: 0 }}>
