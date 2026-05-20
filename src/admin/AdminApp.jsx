@@ -1304,14 +1304,18 @@ function SettingsEditor() {
 
   const upSetting = (f, v) => setSettings(s => ({ ...s, [f]: v }));
 
-  const save = () => {
+  const [syncErr, setSyncErr] = useState("");
+
+  const save = async () => {
     if (settings.adminPass !== pwConfirm && pwConfirm !== "") {
       setPwErr("两次密码不一致"); return;
     }
     setPwErr("");
+    setSyncErr("");
     saveSettings(settings);
-    syncToServer(); // ← push settings to JSONBin so frontend sees changes
-    setSaved(true); setTimeout(() => setSaved(false), 2000);
+    const ok = await syncToServer();
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    else    { setSyncErr("❌ 同步到 JSONBin 失败！请检查 Bin ID / Master Key，或查看浏览器控制台。"); }
   };
   const reset = () => { if (confirm("Reset settings to defaults?")) { resetSettings(); setSettings(DEFAULT_SETTINGS); setPwConfirm(""); } };
 
@@ -1324,6 +1328,8 @@ function SettingsEditor() {
           <button onClick={save} style={btn()}>{saved ? "✓ Saved!" : "Save Settings"}</button>
         </div>
       </div>
+
+      {syncErr && <div style={{ padding: "12px 16px", background: "#FEF2F2", borderRadius: 10, border: "1px solid #FECACA", color: S.red, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>{syncErr}</div>}
 
       {sectionCard("🔐 Admin Password", (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>

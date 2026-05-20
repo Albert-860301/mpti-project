@@ -661,27 +661,42 @@ export async function syncToServer() {
   // ── JSONBin (production) ──────────────────────────────────────
   if (jsonbinId && jsonbinKey) {
     try {
-      await fetch(`https://api.jsonbin.io/v3/b/${jsonbinId}`, {
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${jsonbinId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "X-Master-Key": jsonbinKey },
         body: JSON.stringify(data),
       });
-      return;
-    } catch (_) { /* fall through */ }
+      if (res.ok) {
+        console.log("[MPTI] syncToServer → JSONBin OK");
+        return true;
+      }
+      const errBody = await res.text().catch(() => "");
+      console.error("[MPTI] syncToServer → JSONBin FAILED:", res.status, errBody);
+      return false;
+    } catch (err) {
+      console.error("[MPTI] syncToServer → Network error:", err);
+      return false;
+    }
   }
 
   // ── Local Vite dev server (development) ───────────────────────
   try {
-    await fetch("/api/save-data", {
+    const res = await fetch("/api/save-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-  } catch (_) { /* silently ignore */ }
+    return res.ok;
+  } catch (_) { return false; }
 }
 
 export async function loadFromServer() {
-  const { jsonbinId, jsonbinKey } = getSettings();
+  // Always read credentials from DEFAULT_SETTINGS as the authoritative source —
+  // don't rely on potentially stale localStorage overrides
+  const jsonbinId  = DEFAULT_SETTINGS.jsonbinId;
+  const jsonbinKey = DEFAULT_SETTINGS.jsonbinKey;
+
+  console.log("[MPTI] loadFromServer: binId =", jsonbinId ? jsonbinId.slice(0, 8) + "…" : "(empty)");
 
   // ── JSONBin (production) ──────────────────────────────────────
   if (jsonbinId && jsonbinKey) {
@@ -689,19 +704,26 @@ export async function loadFromServer() {
       const res = await fetch(`https://api.jsonbin.io/v3/b/${jsonbinId}/latest`, {
         headers: { "X-Master-Key": jsonbinKey },
       });
+      console.log("[MPTI] JSONBin response:", res.status);
       if (res.ok) {
         const json = await res.json();
-        applyServerData(json.record ?? json);
+        const record = json.record ?? json;
+        console.log("[MPTI] Loaded from JSONBin, keys:", Object.keys(record).join(", "));
+        applyServerData(record);
         return true;
       }
-    } catch (_) { /* fall through to store.json */ }
+      console.warn("[MPTI] JSONBin returned", res.status);
+    } catch (err) {
+      console.warn("[MPTI] JSONBin fetch failed:", err.message || err);
+    }
   }
 
   // ── Static store.json fallback ────────────────────────────────
   try {
     const res = await fetch(`/data/store.json?t=${Date.now()}`);
-    if (!res.ok) return false;
+    if (!res.ok) { console.warn("[MPTI] store.json fallback:", res.status); return false; }
     applyServerData(await res.json());
+    console.log("[MPTI] Loaded from store.json fallback");
     return true;
   } catch (_) { return false; }
 }
