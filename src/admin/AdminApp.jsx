@@ -107,13 +107,31 @@ async function saveImageToDisk(folder, filename, dataUrl) {
       formData.append("file", dataUrl);
       formData.append("upload_preset", preset);
       formData.append("public_id", publicId);
+      formData.append("overwrite", "true");
+      formData.append("invalidate", "true");
       const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
         method: "POST",
         body: formData,
       });
       const data = await res.json();
-      if (data.secure_url) return data.secure_url;
-    } catch { /* fall through */ }
+      if (data.secure_url) {
+        // Append cache-bust param so browsers & CDN don't serve stale version
+        const bust = `t=${Date.now()}`;
+        const sep  = data.secure_url.includes("?") ? "&" : "?";
+        return `${data.secure_url}${sep}${bust}`;
+      }
+      // If Cloudinary rejected overwrite, try with unique public_id
+      if (data.error) {
+        console.warn("Cloudinary upload error, retrying with unique ID:", data.error.message);
+        const formData2 = new FormData();
+        formData2.append("file", dataUrl);
+        formData2.append("upload_preset", preset);
+        formData2.append("public_id", `${publicId}_v${Date.now()}`);
+        const res2 = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: "POST", body: formData2 });
+        const data2 = await res2.json();
+        if (data2.secure_url) return data2.secure_url;
+      }
+    } catch (e) { console.error("Cloudinary upload failed:", e); }
   }
 
   // ── Local Vite dev server API (development) ───────────────────
