@@ -799,55 +799,32 @@ function ImageManager() {
     const cloudName = settings.cloudinaryCloudName?.trim();
     if (!cloudName) { alert("请先在 Settings 配置 Cloudinary Cloud Name"); setRecovering(false); setStatus(""); return; }
 
-    const recovered = {};
-    const recoveredRaw = {};
+    let count = 0;
     const allKeys = Object.keys(types);
 
     for (const key of allKeys) {
-      const rawUrl   = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}.jpg`;
-      const bakedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}_baked.jpg`;
-      // Cloudinary transform: crop off bottom 7% (the old overlay bar) to recover clean original
+      // Try raw first, then baked — use Cloudinary URL cropping to strip old bar
+      const rawUrl     = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${key}.jpg`;
       const croppedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/c_crop,g_north,h_0.93/mpti/types/${key}_baked.jpg`;
 
-      // 1. Best: raw original exists
-      if (await testImage(rawUrl)) {
-        recovered[key] = rawUrl;
-        recoveredRaw[key] = rawUrl;
-        setStatus(`✓ ${key} (原图)`);
-        continue;
-      }
-      // 2. Fallback: crop the old bar off the baked version via Cloudinary transform
-      if (await testImage(croppedUrl)) {
-        // Use cropped version as the clean source, re-upload it as new raw
-        setStatus(`裁剪 ${key}…`);
-        try {
-          const croppedDiskUrl = await saveImageToDisk("types", `${key}.jpg`, croppedUrl);
-          const finalRaw = croppedDiskUrl || croppedUrl;
-          recovered[key] = finalRaw;
-          recoveredRaw[key] = finalRaw;
-          setStatus(`✓ ${key} (已裁剪旧bar)`);
-        } catch (_) {
-          // If re-upload fails, just use the cropped URL directly
-          recovered[key] = croppedUrl;
-          recoveredRaw[key] = croppedUrl;
-          setStatus(`✓ ${key} (裁剪URL)`);
-        }
-        continue;
-      }
-      setStatus(`✗ ${key} 未找到`);
+      let url = null;
+      if (await testImage(rawUrl)) { url = rawUrl; setStatus(`✓ ${key} (原图)`); }
+      else if (await testImage(croppedUrl)) { url = croppedUrl; setStatus(`✓ ${key} (裁剪旧bar)`); }
+      else { setStatus(`✗ ${key} 未找到`); continue; }
+
+      saveImage(key, url);
+      saveImageRaw(key, url);
+      count++;
     }
 
-    const count = Object.keys(recovered).length;
     if (count > 0) {
-      for (const [k, v] of Object.entries(recovered)) { saveImage(k, v); }
-      for (const [k, v] of Object.entries(recoveredRaw)) { saveImageRaw(k, v); }
       setImages(getImages());
       setCacheBust(Date.now());
       await syncToServer();
-      setStatus(`✅ 恢复了 ${count}/${allKeys.length} 张图片（已自动裁掉旧bar）并同步到云端`);
-    } else {
-      setStatus("❌ Cloudinary 上未找到任何图片，需要重新上传");
     }
+    setStatus(count > 0
+      ? `✅ 恢复了 ${count}/${allKeys.length} 张，可去 Settings 合成新 bar`
+      : "❌ Cloudinary 上未找到任何图片");
     setRecovering(false);
   };
 
@@ -862,41 +839,32 @@ function ImageManager() {
           <button onClick={refreshImages} style={{ ...btn("#F1F5F9", S.text), padding: "6px 14px", fontSize: 12 }}>🔄 刷新</button>
         </div>
       </div>
-      <p style={{ color: S.muted, fontSize: 13, marginBottom: 4 }}>为每种人格类型上传海报图片。如果后台已配置 Overlay，上传时会自动合成。</p>
+      <p style={{ color: S.muted, fontSize: 13, marginBottom: 4 }}>上传原始海报图（不带 bar），然后在 Settings → Overlay 统一合成底栏。</p>
       <div style={{ marginBottom: 16 }}><SizeHint text="实际储存尺寸：540×960px（9:16 竖版海报）" /></div>
-      {status && <div style={{ padding: "8px 14px", background: "#EFF6FF", borderRadius: 8, fontSize: 12, fontWeight: 700, color: S.blue, marginBottom: 12 }}>⏳ {status}</div>}
+      {status && <div style={{ padding: "8px 14px", background: "#EFF6FF", borderRadius: 8, fontSize: 12, fontWeight: 700, color: S.blue, marginBottom: 12, whiteSpace: "pre-wrap" }}>{status}</div>}
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 12 }}>
         {Object.entries(types).map(([key, t]) => {
           const img = images[key];
-          const rawImages = getImagesRaw();
-          const hasRaw = !!rawImages[key];
-          const needsReupload = img && !hasRaw; // has baked but no raw original
           return (
-            <div key={key} style={{ ...cardStyle(), textAlign: "center", padding: 12, border: needsReupload ? `2px solid ${S.orange}` : `1px solid ${S.border}` }}>
+            <div key={key} style={{ ...cardStyle(), textAlign: "center", padding: 12 }}>
               {img ? (
                 <div style={{ position: "relative", marginBottom: 8 }}>
                   <img src={img.startsWith("http") ? `${img}${img.includes("?") ? "&" : "?"}v=${cacheBust}` : img} alt={t.name} style={{ width: "100%", borderRadius: 10, aspectRatio: "9/16", objectFit: "cover" }} />
                   <button onClick={() => handleRemove(key)} style={{ position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: 12, background: S.red, color: "#fff", border: "none", fontSize: 12, cursor: "pointer" }}>✕</button>
-                  {needsReupload && (
-                    <div style={{ position: "absolute", bottom: 4, left: 4, right: 4, padding: "4px 6px", borderRadius: 8, background: "rgba(245,158,11,0.92)", fontSize: 9, fontWeight: 800, color: "#fff", textAlign: "center" }}>
-                      ⚠️ 旧合成版，请重新上传原图
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div onClick={() => handleUpload(key)} style={{ aspectRatio: "9/16", borderRadius: 10, border: `2px dashed ${S.border}`, display: "grid", placeItems: "center", cursor: "pointer", marginBottom: 8, background: "#FAFBFC" }}>
                   <div style={{ textAlign: "center", color: S.muted }}>
                     <div style={{ fontSize: 28 }}>📷</div>
-                    <div style={{ fontSize: 10, marginTop: 4 }}>Click to upload</div>
+                    <div style={{ fontSize: 10, marginTop: 4 }}>点击上传</div>
                   </div>
                 </div>
               )}
               <div style={{ fontSize: 18 }}>{t.e}</div>
               <div style={{ fontSize: 12, fontWeight: 800, color: t.color }}>{t.name}</div>
               <div style={{ marginTop: 4 }}><SizeHint text="540×960px (9:16)" /></div>
-              {img && <button onClick={() => handleUpload(key)} style={{ ...btn(needsReupload ? S.orange : "#F1F5F9", needsReupload ? "#fff" : S.text), padding: "6px 12px", fontSize: 11, marginTop: 6, width: "100%" }}>{needsReupload ? "📷 重新上传原图" : "📷 替换图片"}</button>}
-              {!img && <button onClick={() => handleUpload(key)} style={{ ...btn("#F1F5F9", S.text), padding: "6px 12px", fontSize: 11, marginTop: 6, width: "100%" }}>Upload</button>}
+              <button onClick={() => handleUpload(key)} style={{ ...btn("#F1F5F9", S.text), padding: "6px 12px", fontSize: 11, marginTop: 6, width: "100%" }}>{img ? "📷 替换" : "📷 上传"}</button>
             </div>
           );
         })}
@@ -1277,34 +1245,20 @@ function OverlaySettings({ settings, upSetting, onImagesUpdated }) {
     setPreviewing(true);
     setPreviewUrl(null);
     try {
-      // Find any existing image to use as preview sample
-      const images = getImages();
+      // Find a raw image to preview with — NEVER use _baked URLs
       const rawImages = getImagesRaw();
       let sampleUrl = null;
-
-      // 1. Try stored images first
-      for (const [key, url] of Object.entries(images)) {
-        if (!url || key === "__overlay_logo__") continue;
-        sampleUrl = rawImages[key] || url;
-        break;
+      for (const [key, url] of Object.entries(rawImages)) {
+        if (url) { sampleUrl = url; break; }
       }
-
-      // 2. If no stored images, try constructing a Cloudinary URL directly
+      // Fallback: check images (user just uploaded, both raw and display point to same URL)
       if (!sampleUrl) {
-        const cloudName = settings.cloudinaryCloudName?.trim();
-        if (cloudName) {
-          const types = getTypes();
-          const firstKey = Object.keys(types)[0];
-          if (firstKey) {
-            const tryUrl = `https://res.cloudinary.com/${cloudName}/image/upload/mpti/types/${firstKey}_baked.jpg`;
-            // Test if it loads
-            const ok = await new Promise(r => { const i = new Image(); i.onload = () => r(true); i.onerror = () => r(false); i.src = tryUrl; });
-            if (ok) sampleUrl = tryUrl;
-          }
+        const images = getImages();
+        for (const [key, url] of Object.entries(images)) {
+          if (url && key !== "__overlay_logo__" && !url.includes("_baked")) { sampleUrl = url; break; }
         }
       }
-
-      if (!sampleUrl) { alert("没有可用的图片，请先上传或恢复至少一张人格图"); setPreviewing(false); return; }
+      if (!sampleUrl) { alert("没有原图可用，请先在 Images 上传至少一张图片"); setPreviewing(false); return; }
 
       const logoSrc = getOverlayLogo() || null;
       const blobUrl = await buildShareImageAdmin(sampleUrl, {
@@ -1336,36 +1290,39 @@ function OverlaySettings({ settings, upSetting, onImagesUpdated }) {
     const rawImages = getImagesRaw();
     const settingsNow = getSettings();
 
-    push(`使用设置: text1="${settingsNow.overlayText}", text2="${settingsNow.overlayText2}", qr="${settingsNow.overlayQrUrl}"`);
-
     let skipped = 0;
-    for (const [key, url] of Object.entries(images)) {
-      if (!url || key === "__overlay_logo__") continue;
-      const srcUrl = rawImages[key]; // ONLY use raw original — never re-bake from baked
+    let done = 0;
+    // Build list: prefer rawImages, fallback to images if not _baked
+    const allTypes = getTypes();
+    for (const key of Object.keys(allTypes)) {
+      const raw = rawImages[key];
+      const img = images[key];
+      // Pick source: raw > non-baked image > skip
+      const srcUrl = raw || (img && !img.includes("_baked") ? img : null);
       if (!srcUrl) {
-        push(`⚠ 跳过 ${key}：缺少原图，请先在 Images 重新上传`);
+        push(`⚠ 跳过 ${key}：无原图`);
         skipped++;
         continue;
       }
-      const isBaked = srcUrl.includes("_baked");
-      push(`合成 ${key}… (源: ${isBaked ? "⚠️旧合成图!" : "✓原图"} ${srcUrl.slice(-40)})`);
+      push(`合成 ${key}…`);
       try {
         const bakedUrl = await bakeAndUpload(key, srcUrl, settingsNow);
         if (bakedUrl) {
-          saveImageRaw(key, srcUrl);  // preserve original for future re-bakes
+          saveImageRaw(key, srcUrl);
           saveImage(key, bakedUrl);
           push(`✓ ${key}`);
+          done++;
         } else {
           push(`✗ ${key}：上传失败`);
         }
       } catch (err) {
-        push(`✗ ${key}：${err.message || "合成失败"}`);
+        push(`✗ ${key}：${err.message || "error"}`);
       }
     }
 
     await syncToServer();
-    if (skipped > 0) push(`⚠️ ${skipped} 张图片因缺少原图被跳过，请先在 Images 上传原图`);
-    push("✅ 完成！前端刷新后即可看到新图片。");
+    if (skipped > 0) push(`⚠️ ${skipped} 张跳过（无原图），请在 Images 上传`);
+    push(`✅ 完成 ${done} 张！前端刷新即可看到。`);
     setRebaking(false);
     if (onImagesUpdated) onImagesUpdated();  // refresh ImageManager to show latest
   };
@@ -1730,9 +1687,13 @@ export default function AdminApp() {
   const [synced, setSynced] = useState(false);
 
   // Pull latest data from JSONBin on admin load (so images/settings are up to date)
+  // 8s timeout so admin is never stuck on loading spinner
   useEffect(() => {
     if (!authed) return;
-    loadFromServer().finally(() => { setSynced(true); setImgVer(v => v + 1); });
+    const timeout = setTimeout(() => { setSynced(true); }, 8000);
+    loadFromServer()
+      .catch(() => {})
+      .finally(() => { clearTimeout(timeout); setSynced(true); setImgVer(v => v + 1); });
   }, [authed]);
 
   if (!authed) return <LoginGate onAuth={setAuthed} />;
